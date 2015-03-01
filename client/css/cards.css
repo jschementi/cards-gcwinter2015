@@ -1,0 +1,158 @@
+
+.ui-selectable-helper { position: absolute; z-index: 100; border:1px dotted black; }
+
+.card {
+    font-family: Helvetica, sans-serif;
+    width: 50px;
+    height: 70px;
+    display: block;
+    position: relative;
+    padding: 0;
+    cursor: default;
+}
+
+.card.ui-selected {
+    position: relative;
+    top: -5px;
+}
+
+.card .face {
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    -webkit-box-shadow: 0 2px 5px #ddd;
+}
+.card .face.front {
+    background-color: white;
+    font-weight: bold;
+    display: none;
+}
+.card .face.back {
+    background-color: #660000;
+    display: block;
+}
+.card.faceup .face.front {
+    display: block;
+}
+.card.faceup .face.back {
+    display: none;
+}
+.card .front .value {
+    font-size: 1.4em;
+    text-align: left;
+    position: absolute;
+    top: 0.2em;
+    left: 0.3em;
+}
+.card .front .suit {
+    font-size: 2.25em;
+    bottom: 0.1em;
+    text-align: center;
+    position: absolute;
+    left: 0;
+    right: 0;
+}
+
+.card-list .card {
+    margin: 3px 3px 3px 0;
+    float: left;
+}
+
+.hand, #deck, .handcontainer {
+    clear: both;
+    float:left;
+}
+
+#deck {
+    padding: 0 15px;
+}
+.stack {
+    float: left;
+    margin: 3px 3px 3px 0;
+    position: relative;
+    width: 50px;
+    height: 70px;
+}
+.stack .card {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+#table .card-list {
+    width: auto;
+    min-width: 50px;
+    height: 70px;
+    float: left;
+    margin: 3px 3px 3px 0;
+}
+#table .card {
+    float: left;
+}
+
+.cardPlaceholder {
+    border: 1px dashed #bbb;
+    background-color: #eee;
+    border-radius: 4px;
+    
+    /* Account for the border ... */
+    width: 48px;
+    height: 68px;
+}
+
+#surface {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+}
+    #surface .card {
+        position: absolute;    
+    }
+
+.waitingForInteraction {    
+    float: left;
+    border-radius: 5px;
+    border: 3px solid #eee;
+    background-color: whitesmoke;
+}
+@-webkit-keyframes pulsate {
+    0%   { border-color: #eee; }
+    50%  { border-color: #aaa; }
+    100% { border-color: #eee; }
+}
+.waitingForInteraction.yourTurn {
+    -webkit-animation: pulsate 1s infinite;
+    -webkit-animation-timing-function: ease-in-out;    
+}
+.waitingForInteraction.yourTurn .card {
+    cursor: pointer;
+}
+
+#deck > .waitingForInteraction {
+    margin: 11px;
+}
+.stack {
+    margin: 19px;
+}
+#deck > .waitingForInteraction .stack {
+    margin: 5px;
+}
+
+.handcontainer > .hand {
+    margin: 14px;
+    min-height: 76px;
+    min-width: 52px;
+}
+.handcontainer > .waitingForInteraction {
+    margin: 11px;
+}
+.handcontainer > .waitingForInteraction .hand {
+    margin: 0;
+}
