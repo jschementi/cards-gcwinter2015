@@ -20,11 +20,14 @@ function renderCard (card) {
     return $('<div/>').html(card.value + ' of ' + card.suit + 's');
 }
 
-function renderCards (cards) {
+function renderCardList (cards) {
+    var cardListEl = $('<div/>');
     for (var i = 0; i < cards.length; i++) {
-        renderCard(cards[i]).appendTo('#debug');
+        renderCard(cards[i]).appendTo(cardListEl);
     }
+    return cardListEl;
 }
 
 var deck = createDeck();
-renderCards(deck);
+var cardListEl = renderCardList(deck);
+cardListEl.appendTo('#table');
