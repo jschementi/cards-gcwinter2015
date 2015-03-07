@@ -1,21 +1,30 @@
+/* global _ */
+
 var suits = ['heart', 'diamond', 'spade', 'club'];
-var values = _.flatten(['ace',_.range(2,11),'jack','queen','king']);
+var values = ['ace', 2, 3, 4, 5, 6, 7, 8, 9, 10, 'jack','queen','king'];
 
-var deck = [];
+function createDeck() {
+    var deck = [];
+    for (var i = 0; i < suits.length; i++) {
+        for (var j = 0; j < values.length; j++) {
+            deck.push({
+                value: values[j],
+                suit: suits[i]
+            });
+        }
+    }
+    return deck;
+}
 
-for (var i = 0; i < suits.length; i++) {
-    for (var j = 0; j < values.length; j++) {
-        deck.push({
-            value: values[j],
-            suit: suits[i]
-        });
+function renderCard (card) {
+    return $('<div/>').html(card.value + ' of ' + card.suit + 's');
+}
+
+function renderCards (cards) {
+    for (var i = 0; i < cards.length; i++) {
+        renderCard(cards[i]).appendTo('#debug');
     }
 }
 
-function printCard (card) {
-    print(deck[i].value + ' of ' + deck[i].suit + 's');
-}
-
-for (var i = 0; i < deck.length; i++) {
-    printCard(deck[i]);
-}
+var deck = createDeck();
+renderCards(deck);
