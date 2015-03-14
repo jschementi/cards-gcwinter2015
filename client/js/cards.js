@@ -54,7 +54,7 @@ function createDeck () {
             deck.push(new Card({value: values[j], suit: suits[i]}));
         }
     }
-    return new CardList(deck);
+    return new CardList(deck, {faceup: false});
 }
 
 var Player = Backbone.Model.extend({
@@ -141,10 +141,12 @@ var Game = Backbone.Model.extend({
         this.set('hasPickedCard', true);
 
         if (this.get('deck').length === 0) {
-            this.set('deck', this.get('discardPile'));
-            this.set('discardPile', new CardList([], {faceup: true}));
-            this.get('deck').shuffle();
-            this.get('discardPile').push(this.get('deck').pop());
+            var discardPile = this.get('discardPile');
+            while (discardPile.length > 0) {
+                discardPile.popTo(deck);
+            }
+            deck.shuffle();
+            deck.popTo(discardPile);
         }
     },
 
