@@ -1,7 +1,8 @@
 
 .ui-selectable-helper { position: absolute; z-index: 100; border:1px dotted black; }
 
-.card {
+.card,
+.hand .sortable-ghost {
     font-family: Helvetica, sans-serif;
     width: 50px;
     height: 70px;
@@ -59,9 +60,14 @@
     right: 0;
 }
 
-.card-list .card-container {
-    margin: 3px 3px 3px 0;
+.card-list .card-container,
+.card-list .sortable-ghost {
     float: left;
+    margin: 3px 3px 3px 0;
+}
+
+.hand.card-list .sortable-ghost {
+    visibility: hidden;
 }
 
 .hand, #deck, .handcontainer {
@@ -165,9 +171,8 @@
 	perspective: 1000;
 }
 /* flip the pane when hovered */
-/*.card-container:hover .card, 
-.card-container.hover .card,*/
-.card-container.flip .card {
+.card-container.flip .card,
+.card-container.sortable-dragging .card{
 	transform: rotateY(180deg);
 }
 
@@ -189,14 +194,25 @@
 }
 
 /* front pane, placed above back */
-.back {
+.front {
 	z-index: 2;
 	/* for firefox 31 */
 	transform: rotateY(0deg);
 }
 
 /* back, initially hidden pane */
-.front {
+.back {
 	transform: rotateY(180deg);
 }
+
+[draggable] {
+  -moz-user-select: none;
+  -khtml-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Required to make elements draggable in old WebKit */
+  -khtml-user-drag: element;
+  -webkit-user-drag: element;
+}
+
 

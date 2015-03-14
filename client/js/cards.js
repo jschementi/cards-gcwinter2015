@@ -1,47 +1,337 @@
-function getValue (card) {
-    if (typeof card.value === 'string') {
-        return card.value[0].toUpperCase();
+/* global _, Backbone, Sortable */
+
+var Card = Backbone.Model.extend({
+    initialize: function () {
+        this.listenTo(this, 'add', this.updateFlipForCollection);  
+    },
+    
+    flip: function () {
+        this.set('faceup', !this.get('faceup'));
+    },
+    
+    updateFlipForCollection: function () {
+        if (this.collection && this.collection.faceup !== null) {
+            this.set('faceup', this.collection.faceup);
+        }
     }
-    return card.value + '';
-}
+});
 
-function getSuit (card) {
-    switch (card.suit[0]) {
-        case 's': return "♠";
-        case 'h': return "♥";
-        case 'd': return "♦";
-        case 'c': return "♣";
+var CardList = Backbone.Collection.extend({
+    model: Card,
+    
+    initialize: function (models, options) {
+        this.faceup = options && typeof options.faceup === 'boolean' ? options.faceup : null;
+    },
+    
+    shuffle: function () {
+        this.reset(_.shuffle(this.models));
+        return this;
+    },
+    
+    reorder: function(newIndex, originalIndex) {
+        var temp = this.at(originalIndex);
+        this.remove(temp, {silent: true});
+        this.add(temp, {at: newIndex, silent: true});
     }
+});
+
+var suits = ['heart', 'diamond', 'spade', 'club'];
+var values = ['ace', 2, 3, 4, 5, 6, 7, 8, 9, 10, 'jack','queen','king'];
+
+function createDeck () {
+    var deck = [];
+    for (var i = 0; i < suits.length; i++) {
+        for (var j = 0; j < values.length; j++) {
+            deck.push(new Card({value: values[j], suit: suits[i]}));
+        }
+    }
+    return new CardList(deck);
 }
 
-var cardTemplate = _.template(
-    '<div class="card-container flip" ontouchstart="this.classList.toggle(\'hover\');">' +
-    '    <div class="card">' +
-    '        <div class="front face suit-<%= card.suit %>">' +
-    '            <div class="value"><%= card.value %></div>' +
-    '            <div class="suit"><%= card.suit %></div>' +
-    '        </div>' +
-    '        <div class="back face">' +
-    '        </div>' +
-    '    </div>' +
-    '</div>', {variable: 'card'});
+var Player = Backbone.Model.extend({
+    initialize: function () {
+        if (!this.get('name') && typeof this.get('index') === 'number') {
+            this.set('name', 'Player #' + (this.get('index') + 1));
+        }
+        this.set('bot', this.get('index') !== 0);
+        this.set('hand', new CardList([], {faceup: this.get('index') === 0}));
+    },
+});
 
-function renderCard (card) {
-    return cardTemplate({
-        suit: getSuit(card),
-        value: getValue(card)
-    });
-}
+var PlayerList = Backbone.Collection.extend({
+    model: Player
+});
 
-function renderCardList(cards) {
-    var cardsEl = $('<div class="card-list"></div>');
-    cards.forEach(function (card) {
-        cardsEl.append(renderCard(card)); 
-    });
-    return cardsEl;
-}
+var Game = Backbone.Model.extend({
+    constructor: function (attributes, options) {
+        if (!attributes.cardsPerPlayer) {
+            throw new Error("Must provide cardsPerPlayer");
+        }
+        if (!attributes.numberOfPlayers) {
+            throw new Error("Must provide numberOfPlayers");
+        }
+        Backbone.Model.apply(this, arguments);
+    },
+    
+    initialize: function () {
+        this.set({
+            deck: createDeck(),
+            discardPile: new CardList([], {faceup: true}),
+            players: new PlayerList(_.times(this.get('numberOfPlayers'), function (i) {
+                return new Player({name: null, index: i});
+            })),
+        });
+    },
+    
+    deal: function () {
+        var deck = this.get('deck');
+        var players = this.get('players');
+        var discardPile = this.get('discardPile');
+        _.times(this.get('cardsPerPlayer'), function (i) {
+            players.forEach(function (player) {
+                player.get('hand').push(deck.pop());
+            });
+        });
+        discardPile.push(deck.pop());
+        this.nextTurn();
+    },
+    
+    nextTurn: function () {
+        var index = this.get('currentPlayerIndex');
+        if (typeof index !== 'number') {
+            index = -1;
+        }
+        index = (index + 1) % this.get('players').length;
+        this.set('currentPlayerIndex', index);
+        this.set('currentPlayer', this.get('players').at(this.get('currentPlayerIndex')));
+        this.set('hasPickedCard', false);
+        
+        if (this.get('currentPlayer').get('bot')) {
+            this.botTurn();
+        }
+    },
+    
+    shouldPickCard: function () {
+        return !this.get('hasPickedCard');
+    },
+    
+    shouldDiscard: function () {
+        return this.get('hasPickedCard');
+    },
+    
+    pickFromStock: function () {
+        if (!this.shouldPickCard()) {
+            return;
+        }
+        if (this.get('deck').length === 0) {
+            this.set('deck', this.get('discardPile'));
+            this.set('discardPile', new CardList([], {faceup: true}));
+            this.get('deck').shuffle();
+            this.get('discardPile').push(this.get('deck').pop());
+        }
+        this.get('currentPlayer').get('hand').push(this.get('deck').pop());
+        this.set('hasPickedCard', true);
+    },
+    
+    pickFromDiscard: function () {
+        if (!this.shouldPickCard()) {
+            return;
+        }
+        if (this.get('discardPile').length === 0) {
+            return;
+        }
+        this.get('currentPlayer').get('hand').push(this.get('discardPile').pop());
+        this.set('hasPickedCard', true);
+    },
+    
+    tryingToDiscard: function (cardIndex) {
+        if (!this.shouldDiscard()) {
+            return;
+        }
+        var currentHand = this.get('currentPlayer').get('hand');
+        var discardPile = this.get('discardPile');
+        var card = this.get('currentPlayer').get('hand').at(cardIndex);
+        currentHand.remove(card);
+        discardPile.add(card);
+        this.nextTurn();
+    },
+    
+    botTurn: function () {
+        setTimeout(function () {
+            if (Math.random() < 0.5) {
+                this.pickFromStock();
+            } else {
+                this.pickFromDiscard();
+            }
+            setTimeout(function () {
+                var randomCardIndex = Math.floor(Math.random() * this.get('currentPlayer').get('hand').length);
+                this.tryingToDiscard(randomCardIndex);
+            }.bind(this), 500);
+        }.bind(this), 500);
+    }
+});
 
-//flipCardsOnHover($('.card-container', cardsEl));
+var CardView = Backbone.View.extend({
+    initialize: function () {
+        this.listenTo(this.model, 'change:faceup', this.showSide);
+        this.listenTo(this.model, 'remove', this.remove);
+    },
+    
+    className: 'card-container',
+    
+    template: _.template(
+        '<div class="card">' +
+        '    <div class="front face suit-<%= card.suit %>">' +
+        '        <div class="value"><%= card.value %></div>' +
+        '        <div class="suit"><%= card.suit %></div>' +
+        '    </div>' +
+        '    <div class="back face">' +
+        '    </div>' +
+        '</div>', {variable: 'card'}),
+    
+    getValue: function () {
+        var value = this.model.get('value');
+        if (typeof value === 'string') {
+            return value[0].toUpperCase();
+        }
+        return value + '';
+    },
+    
+    getSuit: function () {
+        switch (this.model.get('suit').toLowerCase()[0]) {
+            case 's': return "♠";
+            case 'h': return "♥";
+            case 'd': return "♦";
+            case 'c': return "♣";
+        }
+    },
+    
+    render: function () {
+        this.$el.html(this.template({
+            suit: this.getSuit(),
+            value: this.getValue()
+        }));
+        this.showSide(this.model, this.model.get('faceup'));
+        return this;
+    },
+    
+    showSide: function (model, faceup) {
+        this.$el.toggleClass('flip', !faceup);
+    }
+});
+
+var ListView = Backbone.View.extend({
+    constructor: function () {
+        if (!this.ItemView) {
+            throw new Error("ListView requires an ItemView");
+        }
+        Backbone.View.apply(this, arguments);
+    },
+    
+    initialize: function () {
+        this.listenTo(this.collection, 'add', this.addOne);
+        this.listenTo(this.collection, 'reset', this.addAll);
+    },
+    
+    render: function () {
+        this.addAll();
+        return this;
+    },
+    
+    addOne: function (model) {
+        this.$el.append(new this.ItemView({model: model}).render().el);
+    },
+    
+    addAll: function () {
+        this.$el.empty();
+        for (var i = 0; i < this.collection.length; i++) {
+            this.addOne(this.collection.models[i]);
+        }
+    }
+});
+
+var CardListView = ListView.extend({
+    className: 'card-list',
+    
+    ItemView: CardView,
+    
+    initialize: function (options) {
+        this.reorder = !!(options || {}).reorder;
+        ListView.prototype.initialize.apply(this, arguments);
+    },
+    
+    render: function () {
+        var result = ListView.prototype.render.apply(this, arguments);
+        if (this.reorder) {
+            Sortable.create(this.el, {
+                onEnd: function (evt) {
+                    this.collection.reorder(evt.newIndex, evt.oldIndex);
+                }.bind(this)
+            });
+        }
+        return result;
+    }
+});
+
+var PlayerView = Backbone.View.extend({
+    className: 'player',
+    
+    render: function () {
+        var el = $('<div class="handcontainer"/>').appendTo(this.el);
+        el.toggleClass('you', !this.model.get('bot'));
+        $('<div/>').html(this.model.get('name')).appendTo(el);
+        new CardListView({collection: this.model.get('hand'), className: 'hand card-list well', reorder: !this.model.get('bot')}).render().$el.appendTo(el);
+        return this;
+    }
+});
+
+var PlayersView = ListView.extend({
+    ItemView: PlayerView,
+    className: 'players'
+});
+
+var GameView = Backbone.View.extend({
+    events: {
+        'click #stock': 'pickFromStock',
+        'click #discard': 'pickFromDiscard',
+        'click .handcontainer.you .card-container': 'tryingToDiscard'
+    },
+    
+    render: function () {
+        var deckEl = $('<div id="deck"/>').appendTo(this.el);
+        new CardListView({collection: this.model.get('deck'), className: 'stack', id: 'stock'}).render().$el.appendTo(deckEl);
+        new CardListView({collection: this.model.get('discardPile'), className: 'stack', id: 'discard'}).render().$el.appendTo(deckEl);
+        new PlayersView({collection: this.model.get('players')}).render().$el.appendTo(this.el);
+        return this;
+    },
+    
+    shouldAllowUI: function () {
+        return !this.model.get('currentPlayer').get('bot');
+    },
+    
+    pickFromStock: function () {
+        if (!this.shouldAllowUI()) {
+            return;
+        }
+        
+        this.model.pickFromStock();
+    },
+    
+    pickFromDiscard: function () {
+        if (!this.shouldAllowUI()) {
+            return;
+        }
+        this.model.pickFromDiscard();
+    },
+    
+    tryingToDiscard: function (e) {
+        if (!this.shouldAllowUI()) {
+            return;
+        }
+        var index = $(e.currentTarget).index();
+        this.model.tryingToDiscard(index);
+    }
+});
 
 function flipCardsOnHover(cards, delay) {
     cards.hover(function () {
@@ -51,11 +341,11 @@ function flipCardsOnHover(cards, delay) {
             card.removeData('card-flip-timeout-id');
             clearTimeout(timeoutID);
         }
-        $(this).addClass('flip');
+        $(this).removeClass('flip');
     }, function () {
         var card = $(this);
         var timeoutID = setTimeout(function () {
-            card.removeClass('flip');
+            card.addClass('flip');
         }, delay || 300);
         card.data('card-flip-timeout-id', timeoutID);
     });
