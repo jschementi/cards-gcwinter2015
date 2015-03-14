@@ -305,11 +305,16 @@ var PlayerView = Backbone.View.extend({
     initialize: function () {
         if (this.model.game) {
             this.listenTo(this.model.game, 'change:currentPlayerIndex', this.showCurrentPlayer);
+            this.listenTo(this.model.game, 'change:hasPickedCard', this.showWaitingForDiscard);
         }
     },
 
-    showCurrentPlayer: function (model, value, options) {
-        this.$el.toggleClass('current-turn', value === this.model.get('index'));
+    showCurrentPlayer: function (game, currentPlayerIndex, options) {
+        this.$el.toggleClass('current-turn', currentPlayerIndex === this.model.get('index'));
+    },
+
+    showWaitingForDiscard: function (game, hasPickedCard, options) {
+        this.$('.card-list').toggleClass('waitingForInteraction', hasPickedCard && !this.model.get('bot') && game.get('currentPlayerIndex') === this.model.get('index'));
     },
 
     render: function () {
@@ -333,12 +338,25 @@ var GameView = Backbone.View.extend({
         'click .handcontainer.you .card-container': 'tryingToDiscard'
     },
 
+    initialize: function (options) {
+        this.listenTo(this.model, 'change:currentPlayer, change:hasPickedCard', this.showWaitingForInteractionStatus);
+    },
+
     render: function () {
         var deckEl = $('<div id="deck"/>').appendTo(this.el);
         new CardListView({collection: this.model.get('deck'), className: 'stack', id: 'stock'}).render().$el.appendTo(deckEl);
         new CardListView({collection: this.model.get('discardPile'), className: 'stack', id: 'discard'}).render().$el.appendTo(deckEl);
         new PlayersView({collection: this.model.get('players')}).render().$el.appendTo(this.el);
         return this;
+    },
+
+    showWaitingForInteractionStatus: function (game, currentPlayer, options) {
+        var els = $('#stock, #discard');
+        if (this.shouldAllowUI() && this.model.shouldPickCard()) {
+            els.wrap('<div class="waitingForInteraction"></div>');
+        } else if (els.parent('.waitingForInteraction').length === 2) {
+            els.unwrap();
+        }
     },
 
     shouldAllowUI: function () {
@@ -357,6 +375,7 @@ var GameView = Backbone.View.extend({
         if (!this.shouldAllowUI()) {
             return;
         }
+
         this.model.pickFromDiscard();
     },
 

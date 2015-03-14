@@ -135,11 +135,11 @@
     50%  { border-color: #aaa; }
     100% { border-color: #eee; }
 }
-.waitingForInteraction.yourTurn {
+.waitingForInteraction {
     -webkit-animation: pulsate 1s infinite;
-    -webkit-animation-timing-function: ease-in-out;    
+    -webkit-animation-timing-function: ease-in-out;
 }
-.waitingForInteraction.yourTurn .card-container {
+.waitingForInteraction .card-container {
     cursor: pointer;
 }
 
