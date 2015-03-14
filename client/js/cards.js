@@ -59,11 +59,13 @@ function createDeck () {
 
 var Player = Backbone.Model.extend({
     initialize: function (attributes, options) {
-        if (!this.get('name') && typeof this.get('index') === 'number') {
-            this.set('name', 'Player #' + (this.get('index') + 1));
+        var newattrs = {};
+        if (!attributes.name && typeof attributes.index === 'number') {
+            newattrs.name = 'Player #' + (attributes.index + 1);
         }
-        this.set('bot', this.get('index') !== 0);
-        this.set('hand', new CardList([], {faceup: this.get('index') === 0}));
+        newattrs.bot = attributes.index !== 0;
+        newattrs.hand = new CardList([], {faceup: this.get('index') === 0});
+        this.set(newattrs, options);
         this.game = options.game;
     }
 });
