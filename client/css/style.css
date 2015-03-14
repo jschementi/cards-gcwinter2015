@@ -1,3 +1,11 @@
 body > .container {
     margin-top: 70px;
 }
+
+h4 {
+  font-weight: normal;
+}
+
+.current-turn h4 {
+  font-weight: bold;
+}

@@ -32,6 +32,15 @@ var CardList = Backbone.Collection.extend({
         var temp = this.at(originalIndex);
         this.remove(temp, {silent: true});
         this.add(temp, {at: newIndex, silent: true});
+    },
+
+    moveItemTo: function (item, collection) {
+        this.remove(item);
+        collection.add(item);
+    },
+
+    popTo: function (collection) {
+        collection.push(this.pop());
     }
 });
 
@@ -49,13 +58,14 @@ function createDeck () {
 }
 
 var Player = Backbone.Model.extend({
-    initialize: function () {
+    initialize: function (attributes, options) {
         if (!this.get('name') && typeof this.get('index') === 'number') {
             this.set('name', 'Player #' + (this.get('index') + 1));
         }
         this.set('bot', this.get('index') !== 0);
         this.set('hand', new CardList([], {faceup: this.get('index') === 0}));
-    },
+        this.game = options.game;
+    }
 });
 
 var PlayerList = Backbone.Collection.extend({
@@ -78,8 +88,8 @@ var Game = Backbone.Model.extend({
             deck: createDeck(),
             discardPile: new CardList([], {faceup: true}),
             players: new PlayerList(_.times(this.get('numberOfPlayers'), function (i) {
-                return new Player({name: null, index: i});
-            })),
+                return new Player({name: null, index: i}, {game: this});
+            }.bind(this))),
         });
     },
     
@@ -89,10 +99,10 @@ var Game = Backbone.Model.extend({
         var discardPile = this.get('discardPile');
         _.times(this.get('cardsPerPlayer'), function (i) {
             players.forEach(function (player) {
-                player.get('hand').push(deck.pop());
+                deck.popTo(player.get('hand'))
             });
         });
-        discardPile.push(deck.pop());
+        deck.popTo(discardPile);
         this.nextTurn();
     },
     
@@ -107,7 +117,7 @@ var Game = Backbone.Model.extend({
         this.set('hasPickedCard', false);
         
         if (this.get('currentPlayer').get('bot')) {
-            this.botTurn();
+            this.doBotTurn();
         }
     },
     
@@ -123,24 +133,34 @@ var Game = Backbone.Model.extend({
         if (!this.shouldPickCard()) {
             return;
         }
+
+        var currentHand = this.get('currentPlayer').get('hand');
+        var deck = this.get('deck');
+        deck.popTo(currentHand);
+
+        this.set('hasPickedCard', true);
+
         if (this.get('deck').length === 0) {
             this.set('deck', this.get('discardPile'));
             this.set('discardPile', new CardList([], {faceup: true}));
             this.get('deck').shuffle();
             this.get('discardPile').push(this.get('deck').pop());
         }
-        this.get('currentPlayer').get('hand').push(this.get('deck').pop());
-        this.set('hasPickedCard', true);
     },
     
     pickFromDiscard: function () {
         if (!this.shouldPickCard()) {
             return;
         }
-        if (this.get('discardPile').length === 0) {
+
+        var currentHand = this.get('currentPlayer').get('hand');
+        var discardPile = this.get('discardPile');
+        if (discardPile.length === 0) {
             return;
         }
-        this.get('currentPlayer').get('hand').push(this.get('discardPile').pop());
+
+        discardPile.popTo(currentHand);
+
         this.set('hasPickedCard', true);
     },
     
@@ -148,15 +168,17 @@ var Game = Backbone.Model.extend({
         if (!this.shouldDiscard()) {
             return;
         }
+
         var currentHand = this.get('currentPlayer').get('hand');
         var discardPile = this.get('discardPile');
-        var card = this.get('currentPlayer').get('hand').at(cardIndex);
-        currentHand.remove(card);
-        discardPile.add(card);
+
+        var card = currentHand.at(cardIndex);
+        currentHand.moveItemTo(card, discardPile);
+
         this.nextTurn();
     },
-    
-    botTurn: function () {
+
+    doBotTurn: function () {
         setTimeout(function () {
             if (Math.random() < 0.5) {
                 this.pickFromStock();
@@ -275,11 +297,21 @@ var CardListView = ListView.extend({
 
 var PlayerView = Backbone.View.extend({
     className: 'player',
-    
+
+    initialize: function () {
+        if (this.model.game) {
+            this.listenTo(this.model.game, 'change:currentPlayerIndex', this.showCurrentPlayer);
+        }
+    },
+
+    showCurrentPlayer: function (model, value, options) {
+        this.$el.toggleClass('current-turn', value === this.model.get('index'));
+    },
+
     render: function () {
         var el = $('<div class="handcontainer"/>').appendTo(this.el);
         el.toggleClass('you', !this.model.get('bot'));
-        $('<div/>').html(this.model.get('name')).appendTo(el);
+        $('<h4/>').html(this.model.get('name')).appendTo(el);
         new CardListView({collection: this.model.get('hand'), className: 'hand card-list well', reorder: !this.model.get('bot')}).render().$el.appendTo(el);
         return this;
     }
