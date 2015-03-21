@@ -3,6 +3,7 @@
 var Card = Backbone.Model.extend({
     initialize: function () {
         this.listenTo(this, 'add', this.updateFlipForCollection);
+        this.listenTo(this, 'move-to', this.updateFlipForCollection);
     },
 
     flip: function () {
@@ -34,13 +35,34 @@ var CardList = Backbone.Collection.extend({
         this.add(temp, {at: newIndex, silent: true});
     },
 
-    moveItemTo: function (item, collection) {
-        this.remove(item);
-        collection.add(item);
+    moveItemTo: function (item, collection, options) {
+        var idx = this.indexOf(item);
+        this.remove(item, {silent: true});
+        if (!options || !options.silent) {
+            this.trigger('move-from', item, collection, idx);
+            item.trigger('move-from', this, collection, idx);
+        }
+        collection.add(item, {silent: true});
+        var newIdx = collection.indexOf(item);
+        if (!options || !options.silent) {
+            collection.trigger('move-to', item, this, newIdx);
+            item.trigger('move-to', this, collection, newIdx);
+        }
     },
 
-    popTo: function (collection) {
-        collection.push(this.pop());
+    popTo: function (collection, options) {
+        var idx = this.length - 1;
+        var item = this.pop({silent: true});
+        if (!options || !options.silent) {
+            this.trigger('move-from', item, collection, idx);
+            item.trigger('move-from', this, collection, idx);
+        }
+        collection.push(item, {silent: true});
+        var newIdx = collection.indexOf(item);
+        if (!options || !options.silent) {
+            collection.trigger('move-to', item, this, newIdx);
+            item.trigger('move-to', this, collection, newIdx);
+        }
     }
 });
 
@@ -131,14 +153,14 @@ var Game = Backbone.Model.extend({
         return this.get('hasPickedCard');
     },
 
-    pickFromStock: function () {
+    pickFromStock: function (options) {
         if (!this.shouldPickCard()) {
-            return;
+            return false;
         }
 
         var currentHand = this.get('currentPlayer').get('hand');
         var deck = this.get('deck');
-        deck.popTo(currentHand);
+        deck.popTo(currentHand, options);
 
         this.set('hasPickedCard', true);
 
@@ -150,36 +172,42 @@ var Game = Backbone.Model.extend({
             deck.shuffle();
             deck.popTo(discardPile);
         }
+
+        return true;
     },
 
-    pickFromDiscard: function () {
+    pickFromDiscard: function (options) {
         if (!this.shouldPickCard()) {
-            return;
+            return false;
         }
 
         var currentHand = this.get('currentPlayer').get('hand');
         var discardPile = this.get('discardPile');
         if (discardPile.length === 0) {
-            return;
+            return false;
         }
 
-        discardPile.popTo(currentHand);
+        discardPile.popTo(currentHand, options);
 
         this.set('hasPickedCard', true);
+
+        return true;
     },
 
-    tryingToDiscard: function (cardIndex) {
+    tryingToDiscard: function (cardIndex, options) {
         if (!this.shouldDiscard()) {
-            return;
+            return false;
         }
 
         var currentHand = this.get('currentPlayer').get('hand');
         var discardPile = this.get('discardPile');
 
         var card = currentHand.at(cardIndex);
-        currentHand.moveItemTo(card, discardPile);
+        currentHand.moveItemTo(card, discardPile, options);
 
         this.nextTurn();
+
+        return true;
     },
 
     doBotTurn: function () {
@@ -238,11 +266,15 @@ var CardView = Backbone.View.extend({
             value: this.getValue()
         }));
         this.showSide(this.model, this.model.get('faceup'));
+        this.$el.data('view', this);
         return this;
     },
 
     showSide: function (model, faceup) {
-        this.$el.toggleClass('flip', !faceup);
+        $('body').queue(function (next) {
+            this.$el.toggleClass('flip', !faceup);
+            next();
+        }.bind(this));
     }
 });
 
@@ -284,18 +316,39 @@ var CardListView = ListView.extend({
     initialize: function (options) {
         this.reorder = !!(options || {}).reorder;
         ListView.prototype.initialize.apply(this, arguments);
+        this.listenTo(this.collection, 'move-from', this.moveFrom);
+        this.listenTo(this.collection, 'move-to', this.moveTo);
     },
 
     render: function () {
-        var result = ListView.prototype.render.apply(this, arguments);
+        ListView.prototype.render.apply(this, arguments);
+        var collection = this.collection;
         if (this.reorder) {
             Sortable.create(this.el, {
-                onEnd: function (evt) {
-                    this.collection.reorder(evt.newIndex, evt.oldIndex);
-                }.bind(this)
+                group: {name: 'your-hand', pull: true, put: ['deck', 'discard-pile']},
+                sort: true,
+                onUpdate: function (evt) {
+                    collection.reorder(evt.newIndex, evt.oldIndex);
+                }
             });
         }
-        return result;
+        return this;
+    },
+
+    moveFrom: function (item, destination, prevIdx) {
+        var el = this.$('.card-container:nth-child(' + (prevIdx + 1) + ')');
+        if (item) {
+            item.moveFromEl = el;
+        }
+    },
+
+    moveTo: function (item, source, idx) {
+        var el = item && item.moveFromEl;
+        if (!el) {
+            return;
+        }
+        delete item.moveFromEl;    
+        move(el, this.el);
     }
 });
 
@@ -343,10 +396,61 @@ var GameView = Backbone.View.extend({
     },
 
     render: function () {
-        var deckEl = $('<div id="deck"/>').appendTo(this.el);
-        new CardListView({collection: this.model.get('deck'), className: 'stack', id: 'stock'}).render().$el.appendTo(deckEl);
-        new CardListView({collection: this.model.get('discardPile'), className: 'stack', id: 'discard'}).render().$el.appendTo(deckEl);
-        new PlayersView({collection: this.model.get('players')}).render().$el.appendTo(this.el);
+        var deck = this.model.get('deck');
+        var discardPile = this.model.get('discardPile');
+        var players = this.model.get('players');
+
+        var gameView = this;
+        var deckView = new CardListView({collection: deck, className: 'stack', id: 'stock'});
+        var discardPileView = new CardListView({collection: discardPile, className: 'stack', id: 'discard'});
+        var playersView = new PlayersView({collection: players});
+
+        deckView.render();
+        discardPileView.render();
+        playersView.render();
+
+        $('<div id="deck"/>')
+            .appendTo(this.el)
+            .append(deckView.el)
+            .append(discardPileView.el);
+
+        playersView.$el.appendTo(this.el);
+
+        // this.sortableDeck = Sortable.create(deckView.el, {
+        //     group: {name: 'deck', pull: true, put: false},
+        //     sort: false,
+        //     onRemove: function (evt) {
+        //         if (gameView.pickFromStock({silent: true})) {
+        //             var model = getModel(evt.item);
+        //             model.updateFlipForCollection();
+        //         } else {
+
+        //         }
+        //     },
+        // });
+
+        // this.sortableDiscardPile = Sortable.create(discardPileView.el, {
+        //     group: {name: 'discard-pile', pull: true, put: ['your-hand', 'deck']},
+        //     sort: false,
+        //     onAdd: function (evt) {
+        //         var index = evt.oldIndex;
+        //         if (gameView.tryingToDiscardIndex(index, {silent: true})) {
+        //             var model = getModel(evt.item);
+        //             model.updateFlipForCollection();
+        //         } else {
+
+        //         }
+        //     },
+        //     onRemove: function (evt) {
+        //         if (gameView.pickFromDiscard({silent: true})) {
+        //             var model = getModel(evt.item);
+        //             model.updateFlipForCollection();
+        //         } else {
+
+        //         }
+        //     }
+        // });
+
         return this;
     },
 
@@ -357,36 +461,55 @@ var GameView = Backbone.View.extend({
         } else if (els.parent('.waitingForInteraction').length === 2) {
             els.unwrap();
         }
+
+        if (this.shouldAllowUI()) {
+            this.sortableDeck && this.sortableDeck.option('disabled', !this.model.shouldPickCard());
+            this.sortableDiscardPile && this.sortableDiscardPile.option('disabled', !this.model.shouldPickCard());
+        }
     },
 
     shouldAllowUI: function () {
         return !this.model.get('currentPlayer').get('bot');
     },
 
-    pickFromStock: function () {
+    pickFromStock: function (options) {
         if (!this.shouldAllowUI()) {
-            return;
+            return false;
         }
 
-        this.model.pickFromStock();
+        return this.model.pickFromStock(options);
     },
 
-    pickFromDiscard: function () {
+    pickFromDiscard: function (options) {
         if (!this.shouldAllowUI()) {
-            return;
+            return false;
         }
 
-        this.model.pickFromDiscard();
+        return this.model.pickFromDiscard(options);
     },
 
     tryingToDiscard: function (e) {
-        if (!this.shouldAllowUI()) {
-            return;
-        }
         var index = $(e.currentTarget).index();
-        this.model.tryingToDiscard(index);
+
+        return this.tryingToDiscardIndex(index);
+    },
+
+    tryingToDiscardIndex: function (index, options) {
+        if (!this.shouldAllowUI()) {
+            return false;
+        }
+
+        return this.model.tryingToDiscard(index, options);
     }
 });
+
+function getModel (el) {
+    var view = $(el).data('view');
+    if (!view) {
+        return;
+    }
+    return view.model;
+}
 
 function flipCardsOnHover(cards, delay) {
     cards.hover(function () {
@@ -403,5 +526,28 @@ function flipCardsOnHover(cards, delay) {
             card.addClass('flip');
         }, delay || 300);
         card.data('card-flip-timeout-id', timeoutID);
+    });
+}
+
+function move (el, destination) {
+    var delay = 150;
+    $('body').queue(function (next) {
+        var startpos = el.offset();
+        var placeholderEl = $('<div class="cardPlaceholder card-container"/>').appendTo(destination);
+        var endpos = placeholderEl.offset();
+        var translate = {
+            x: endpos.left - startpos.left,
+            y: endpos.top - startpos.top
+        };
+        var css = {
+            transition: (delay/1000)+'s ease-in-out',
+            transform: 'translate3d(' + translate.x + 'px, ' + translate.y + 'px, 0) rotate(360deg)'
+        };
+        el.css(css);
+        setTimeout(function () {
+            el.removeAttr('style');
+            placeholderEl.replaceWith(el);
+            next();
+        }, delay);
     });
 }
